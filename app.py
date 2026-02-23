@@ -875,22 +875,52 @@ with chat_top_container:
             and st.session_state.last_spoken_turn_index != last_turn_idx
         )
         if should_auto_speak:
-            try:
-                import pyttsx3
-            except ImportError:
-                st.caption("Install pyttsx3 for read-aloud: pip install pyttsx3")
-                st.session_state.last_spoken_turn_index = last_turn_idx
-            else:
-                try:
-                    engine = pyttsx3.init()
-                    rate = engine.getProperty("rate")
-                    engine.setProperty("rate", int(rate * st.session_state.speech_rate))
-                    engine.say(last.content)
-                    engine.runAndWait()
-                    st.session_state.last_spoken_turn_index = last_turn_idx
-                except Exception as exc:
-                    st.caption(f"Read-aloud is unavailable in this deployment: {exc}")
-                    st.session_state.last_spoken_turn_index = last_turn_idx
+            speech_text = (last.content or "").strip()
+            if speech_text:
+                speech_payload = json.dumps({
+                    "text": speech_text,
+                    "rate": float(st.session_state.speech_rate),
+                    "turn": int(last_turn_idx),
+                })
+                speech_js = """
+<script>
+(function() {
+  const payload = __PAYLOAD__;
+  const synth = window.speechSynthesis;
+  if (!synth || !payload.text) return;
+
+  // Prevent repeated playback inside browser-side rerenders.
+  const key = "voqtask_last_spoken_turn";
+  const lastTurn = Number(window.sessionStorage.getItem(key) || "-1");
+  if (lastTurn >= payload.turn) return;
+
+  const speak = () => {
+    try {
+      synth.cancel();
+      const utter = new SpeechSynthesisUtterance(payload.text);
+      utter.rate = Math.min(2, Math.max(0.5, Number(payload.rate) || 1));
+      utter.pitch = 1.0;
+      utter.volume = 1.0;
+      synth.speak(utter);
+      window.sessionStorage.setItem(key, String(payload.turn));
+    } catch (e) {
+      console.warn("Browser TTS failed", e);
+    }
+  };
+
+  if (synth.getVoices && synth.getVoices().length === 0) {
+    synth.onvoiceschanged = () => {
+      speak();
+      synth.onvoiceschanged = null;
+    };
+  } else {
+    speak();
+  }
+})();
+</script>
+"""
+                st.components.v1.html(speech_js.replace("__PAYLOAD__", speech_payload), height=0)
+            st.session_state.last_spoken_turn_index = last_turn_idx
 with now_bottom_container:
     st.markdown("<div class='section-head'>Now</div>", unsafe_allow_html=True)
     now_col_left, now_col_right = st.columns([1.55, 1], gap="medium")
