@@ -9,7 +9,10 @@ import sys
 import hashlib
 import html
 import io
+import json
+import os
 import re
+import urllib.request
 import numpy as np
 import soundfile as sf
 
@@ -449,6 +452,50 @@ def _voiceprint_similarity(vec_a, vec_b) -> float:
         return 0.0
     return float(np.dot(a, b))
 
+
+def _build_n8n_payload(event_type: str, task: Task, extras: dict | None = None) -> dict:
+    payload = {
+        "event_type": event_type,
+        "timestamp": now_iso(),
+        "user_id": st.session_state.get("user_id", "default"),
+        "source": "VoqTask",
+        "version": "1.0",
+        "task": {
+            "id": task.id,
+            "title": task.title,
+            "due_date": task.due_date,
+            "due_time": task.due_time,
+            "priority": task.priority.value if task.priority else None,
+            "status": task.status.value if task.status else None,
+            "notes": task.notes or "",
+        },
+    }
+    if extras:
+        payload.update(extras)
+    return payload
+
+
+def _send_n8n_event(event_type: str, task: Task, extras: dict | None = None) -> None:
+    webhook_url = (os.environ.get("N8N_WEBHOOK_URL") or "").strip()
+    if not webhook_url:
+        return
+    payload = _build_n8n_payload(event_type, task, extras=extras)
+    headers = {"Content-Type": "application/json"}
+    token = (os.environ.get("N8N_WEBHOOK_TOKEN") or "").strip()
+    if token:
+        headers["X-VoqTask-Token"] = token
+    print("N8N URL:", webhook_url)
+    print("N8N EVENT:", event_type)
+    print("N8N PAYLOAD:", json.dumps(payload, indent=2))
+    data = json.dumps(payload).encode("utf-8")
+    request = urllib.request.Request(webhook_url, data=data, headers=headers, method="POST")
+    try:
+        with urllib.request.urlopen(request, timeout=5):
+            pass
+    except Exception:
+        # Keep app flow resilient if webhook endpoint is down.
+        return
+
 # Cloud sync: pull once on load when configured and not offline
 if sync_supabase.is_configured() and not config.OFFLINE_MODE and not st.session_state.sync_done_once:
     try:
@@ -661,6 +708,7 @@ if user_message:
         if task:
             task = save_task(task)
             task_created = task
+            _send_n8n_event("task_created", task)
             if sync_supabase.is_configured() and not config.OFFLINE_MODE:
                 try:
                     sync_supabase.push_task(task, st.session_state.user_id)
@@ -786,6 +834,7 @@ for task in due_now:
     if task.id in alerted_ids:
         continue
     due_now_messages.append(f"⏰ Due now: {task.title}" + (f" ({task.due_time})" if task.due_time else ""))
+    _send_n8n_event("task_due", task)
     alerted_ids.add(task.id)
 st.session_state.due_alerted_task_ids = list(alerted_ids)
 
@@ -869,6 +918,7 @@ with now_bottom_container:
             source="quick_action",
         )
         focus_task = save_task(focus_task)
+        _send_n8n_event("task_created", focus_task, extras={"created_via": "quick_action"})
         if sync_supabase.is_configured() and not config.OFFLINE_MODE:
             try:
                 sync_supabase.push_task(focus_task, st.session_state.user_id)
@@ -915,6 +965,8 @@ with now_bottom_container:
             latest = sorted(all_pending, key=lambda t: t.created_at or "", reverse=True)[0]
             changed = update_task_status(latest.id, TaskStatus.DONE)
             if changed:
+                latest.status = TaskStatus.DONE
+                _send_n8n_event("task_done", latest)
                 reward_result = reward_task_completion(latest.id, st.session_state.user_id)
                 if reward_result.get("awarded"):
                     st.session_state.reward_flash = (
@@ -1060,6 +1112,8 @@ with right_col:
                         if st.button("Done", key=f"{key_prefix}_done_{t.id}", help="Mark done"):
                             status_changed = update_task_status(t.id, TaskStatus.DONE)
                             if status_changed:
+                                t.status = TaskStatus.DONE
+                                _send_n8n_event("task_done", t)
                                 reward_result = reward_task_completion(t.id, st.session_state.user_id)
                                 if reward_result.get("awarded"):
                                     st.session_state.reward_flash = (
