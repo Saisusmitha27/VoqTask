@@ -1,0 +1,5 @@
+﻿__pycache__/
+*.pyc
+data/audio_cache/
+data/tasks.db
+.venv/
