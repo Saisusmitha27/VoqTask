@@ -386,6 +386,8 @@ if "security_enroll_audio_bytes" not in st.session_state:
     st.session_state.security_enroll_audio_bytes = None
 if "audio_capture_mode" not in st.session_state:
     st.session_state.audio_capture_mode = "task"
+if "last_spoken_turn_index" not in st.session_state:
+    st.session_state.last_spoken_turn_index = -1
 
 
 def _now_local():
@@ -866,18 +868,29 @@ with chat_top_container:
             chat_rows.append(f"<div class='chat-row {role_class}'><div class='chat-msg {role_class}'>{safe_text}</div></div>")
     st.markdown("<div class='chat-panel'>" + "".join(chat_rows) + "</div>", unsafe_allow_html=True)
     if st.session_state.conversation:
-        last = st.session_state.conversation[-1]
-        if last.role != "user" and st.button("🔊 Read aloud", key="tts_read_aloud"):
+        last_turn_idx = len(st.session_state.conversation) - 1
+        last = st.session_state.conversation[last_turn_idx]
+        should_auto_speak = (
+            last.role != "user"
+            and st.session_state.last_spoken_turn_index != last_turn_idx
+        )
+        if should_auto_speak:
             try:
                 import pyttsx3
-                engine = pyttsx3.init()
-                rate = engine.getProperty("rate")
-                engine.setProperty("rate", int(rate * st.session_state.speech_rate))
-                engine.say(last.content)
-                engine.runAndWait()
-            except Exception:
+            except ImportError:
                 st.caption("Install pyttsx3 for read-aloud: pip install pyttsx3")
-
+                st.session_state.last_spoken_turn_index = last_turn_idx
+            else:
+                try:
+                    engine = pyttsx3.init()
+                    rate = engine.getProperty("rate")
+                    engine.setProperty("rate", int(rate * st.session_state.speech_rate))
+                    engine.say(last.content)
+                    engine.runAndWait()
+                    st.session_state.last_spoken_turn_index = last_turn_idx
+                except Exception as exc:
+                    st.caption(f"Read-aloud is unavailable in this deployment: {exc}")
+                    st.session_state.last_spoken_turn_index = last_turn_idx
 with now_bottom_container:
     st.markdown("<div class='section-head'>Now</div>", unsafe_allow_html=True)
     now_col_left, now_col_right = st.columns([1.55, 1], gap="medium")
