@@ -496,6 +496,19 @@ if st.session_state.conversation and "default" not in st.session_state.conversat
     st.session_state.conversation_by_user["default"] = st.session_state.conversation
 
 def _now_local():
+    """Get current datetime in local timezone.
+    
+    Uses TZ environment variable if set, otherwise uses system local timezone.
+    This ensures consistent date/time handling between local and deployed environments.
+    """
+    import os
+    tz = os.environ.get("TZ", "")
+    if tz:
+        try:
+            from zoneinfo import ZoneInfo
+            return datetime.now(ZoneInfo(tz))
+        except Exception:
+            pass
     return datetime.now().astimezone()
 
 

@@ -1,8 +1,32 @@
 # Natural language understanding for task creation (no rigid commands)
 import re
+import os
 from datetime import datetime, timedelta
 from typing import Tuple, Optional
 from .models import Task, Priority, TaskStatus, now_iso
+
+
+def _get_local_timezone():
+    """Get the local timezone for date calculations.
+    
+    Priority:
+    1. TZ environment variable (for deployment configuration)
+    2. System local timezone (default behavior)
+    
+    Users can set TZ environment variable to their timezone, e.g.:
+    - TZ=Asia/Kolkata (India)
+    - TZ=America/New_York (US Eastern)
+    - TZ=Europe/London (UK)
+    """
+    tz = os.environ.get("TZ", "")
+    if tz:
+        try:
+            import zoneinfo
+            return zoneinfo.ZoneInfo(tz)
+        except Exception:
+            pass
+    # Fall back to local timezone
+    return datetime.now().astimezone().tzinfo
 
 
 # Patterns for date/time and priority
@@ -82,15 +106,18 @@ def _parse_time(match) -> Optional[str]:
 
 
 def _date_for_tomorrow() -> str:
-    return (datetime.now().astimezone() + timedelta(days=1)).strftime("%Y-%m-%d")
+    local_tz = _get_local_timezone()
+    return (datetime.now().astimezone(local_tz) + timedelta(days=1)).strftime("%Y-%m-%d")
 
 
 def _date_for_today() -> str:
-    return datetime.now().astimezone().strftime("%Y-%m-%d")
+    local_tz = _get_local_timezone()
+    return datetime.now().astimezone(local_tz).strftime("%Y-%m-%d")
 
 
 def _date_for_next_week() -> Optional[str]:
-    today = datetime.now().astimezone().date()
+    local_tz = _get_local_timezone()
+    today = datetime.now().astimezone(local_tz).date()
     for _ in range(8):
         today += timedelta(days=1)
         if today.weekday() == 0:  # next Monday
@@ -102,7 +129,8 @@ def _date_for_next_weekday(name: str) -> Optional[str]:
     target = WEEKDAY_INDEX.get((name or "").lower())
     if target is None:
         return None
-    today = datetime.now().astimezone().date()
+    local_tz = _get_local_timezone()
+    today = datetime.now().astimezone(local_tz).date()
     delta = (target - today.weekday()) % 7
     if delta == 0:
         delta = 7
@@ -174,15 +202,17 @@ def parse_task_from_text(text: str) -> Optional[Task]:
 
     in_hrs = IN_N_HOURS.search(text)
     if in_hrs and due_date is None:
+        local_tz = _get_local_timezone()
         delta = timedelta(hours=int(in_hrs.group(1)))
-        dt = datetime.now().astimezone() + delta
+        dt = datetime.now().astimezone(local_tz) + delta
         due_date = dt.strftime("%Y-%m-%d")
         due_time = dt.strftime("%H:%M")
 
     in_days = IN_N_DAYS.search(text)
     if in_days and due_date is None:
+        local_tz = _get_local_timezone()
         delta = timedelta(days=int(in_days.group(1)))
-        due_date = (datetime.now().astimezone() + delta).strftime("%Y-%m-%d")
+        due_date = (datetime.now().astimezone(local_tz) + delta).strftime("%Y-%m-%d")
 
     if URGENT.search(text):
         priority = Priority.URGENT
