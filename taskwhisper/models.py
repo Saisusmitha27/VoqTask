@@ -22,6 +22,7 @@ class TaskStatus(str, Enum):
 class Task:
     id: Optional[str]
     title: str
+    category: str
     due_date: Optional[str]
     due_time: Optional[str]
     priority: Priority
@@ -35,6 +36,8 @@ class Task:
     def __post_init__(self):
         if self.shared_with is None:
             self.shared_with = []
+        if not self.category:
+            self.category = "general"
         if self.notes is None:
             self.notes = ""
         if self.source is None:
@@ -44,6 +47,7 @@ class Task:
         return {
             "id": self.id,
             "title": self.title,
+            "category": self.category,
             "due_date": self.due_date,
             "due_time": self.due_time,
             "priority": self.priority.value,
@@ -67,6 +71,7 @@ class Task:
         return cls(
             id=d.get("id"),
             title=d.get("title") or "(No title)",
+            category=(d.get("category") or "general"),
             due_date=d.get("due_date"),
             due_time=d.get("due_time"),
             priority=Priority(d.get("priority", "medium")),

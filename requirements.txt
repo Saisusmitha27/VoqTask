@@ -10,5 +10,7 @@ pydub>=0.25.1
 # Storage & sync (optional)
 supabase>=2.0.0
 python-dotenv>=1.0.0
+flask>=3.0.0
+streamlit-sortables>=0.3.1
 # Optional: TTS for "Read aloud" (SDG 10)
 pyttsx3>=2.90

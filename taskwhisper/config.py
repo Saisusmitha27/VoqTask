@@ -12,6 +12,7 @@ SUPABASE_URL = os.environ.get("SUPABASE_URL", "")
 SUPABASE_ANON_KEY = os.environ.get("SUPABASE_ANON_KEY", "")
 
 DEFAULT_SPEECH_RATE = 1.0
-SUPPORTED_LANGUAGES = ["en", "es", "fr", "de", "hi", "zh", "ar"]
+# Keep focused options for hackathon demo reliability and local language support.
+SUPPORTED_LANGUAGES = ["en", "ta", "te", "hi"]
 OFFLINE_MODE = os.environ.get("OFFLINE_MODE", "0") == "1"
 WHISPER_MODEL = os.environ.get("WHISPER_MODEL", "base")

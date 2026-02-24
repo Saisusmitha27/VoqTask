@@ -21,11 +21,14 @@ VoqTask lets users speak naturally, instantly turns speech into structured tasks
 
 - Create tasks by voice or text
 - Parse due date/time and priority from natural language
+- Structured task categories (with filter in UI)
 - Task CRUD across Today / Tomorrow / Later tabs
 - Group and sort by priority for clarity
 - In-app sharing text export per task
+- Full data export (JSON and CSV)
 - Reminder alerts when task time is reached
 - Assistant replies and read-aloud support
+- Theme presets and accessibility mode
 
 ## Tech stack
 
@@ -34,6 +37,7 @@ VoqTask lets users speak naturally, instantly turns speech into structured tasks
 - Storage: SQLite
 - Speech-to-text: Whisper (with fallback option)
 - Optional cloud: Supabase
+- API: Flask (REST CRUD endpoints)
 
 ## System flow
 
@@ -109,6 +113,23 @@ streamlit run app.py
 - Optional cloud sync:
   - `SUPABASE_URL`
   - `SUPABASE_ANON_KEY`
+
+## CRUD API
+
+Run the API server:
+
+```bash
+python -m taskwhisper.api_server
+```
+
+Base URL: `http://localhost:8000`
+
+- `GET /health`
+- `GET /tasks?status=pending&category=finance&limit=100`
+- `GET /tasks/<task_id>`
+- `POST /tasks`
+- `PUT /tasks/<task_id>`
+- `DELETE /tasks/<task_id>`
 
 ## Judging-ready checklist
 

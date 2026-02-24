@@ -35,8 +35,14 @@ def push_task(task: Task, user_id: str = "default") -> bool:
         from supabase import create_client
         client = create_client(config.SUPABASE_URL, config.SUPABASE_ANON_KEY)
         payload = {**task.to_dict(), "user_id": user_id}
-        client.table("tasks").upsert(payload).execute()
-        return True
+        try:
+            client.table("tasks").upsert(payload).execute()
+            return True
+        except Exception:
+            # Backward compatibility for older remote schemas without category column.
+            payload.pop("category", None)
+            client.table("tasks").upsert(payload).execute()
+            return True
     except Exception:
         return False
 
@@ -60,9 +66,9 @@ def pull_and_merge(user_id: str = "default") -> int:
     pulled = pull_tasks(user_id)
     merged = 0
     for remote in pulled:
-        local = storage.get_task_by_id(remote.id)
+        local = storage.get_task_by_id(remote.id, user_id=user_id)
         if local is None or (remote.updated_at and local.updated_at and remote.updated_at > local.updated_at):
-            storage.save_task(remote)
+            storage.save_task(remote, user_id=user_id)
             merged += 1
     return merged
 
@@ -71,7 +77,7 @@ def push_all_local(user_id: str = "default") -> int:
     """Push all local tasks to Supabase. Returns count pushed."""
     if not is_configured() or config.OFFLINE_MODE:
         return 0
-    tasks = storage.get_tasks(limit=2000)
+    tasks = storage.get_tasks(user_id=user_id, limit=2000)
     count = 0
     for t in tasks:
         if push_task(t, user_id):

@@ -9,13 +9,21 @@ from .models import Task, Priority, TaskStatus, now_iso
 TOMORROW = re.compile(r"\b(tomorrow|tmrw|tmr)\b", re.I)
 TODAY = re.compile(r"\b(today|tonight|this evening)\b", re.I)
 NEXT_WEEK = re.compile(r"\b(next week|next monday|next tuesday|next wednesday|next thursday|next friday|next saturday|next sunday)\b", re.I)
+NEXT_WEEKDAY = re.compile(r"\bnext\s+(monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b", re.I)
+ON_WEEKDAY = re.compile(r"\b(?:on\s+)?(monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b", re.I)
 TIME = re.compile(r"\b(at\s+)?(\d{1,2})(?::(\d{2}))?\s*(am|pm|a\.m\.|p\.m\.?)?(?=\s|$|[,.!?])", re.I)
 IN_N_HOURS = re.compile(r"\bin\s+(\d+)\s*(hour|hr)s?\b", re.I)
 IN_N_DAYS = re.compile(r"\bin\s+(\d+)\s*days?\b", re.I)
 URGENT = re.compile(r"\b(urgent|asap|as soon as possible|critical|important)\b", re.I)
+HIGH_PRIO = re.compile(r"\b(high priority|high-priority|priority high|top priority)\b", re.I)
+MEDIUM_PRIO = re.compile(r"\b(medium priority|normal priority|priority medium)\b", re.I)
 LOW_PRIO = re.compile(r"\b(whenever|low priority|no rush|someday)\b", re.I)
 REMIND = re.compile(r"\b(remind me to|reminder to|don't forget to|remember to|add task|task:|todo:?)\s*", re.I)
 SHARE_WITH = re.compile(r"\bshare\s+with\s+([a-zA-Z0-9_.+-]+@[a-zA-Z0-9.-]+|\w+)\b", re.I)
+CATEGORY_HINT = re.compile(
+    r"\b(?:in|under|for)\s+(finance|financial|work|office|personal|home|health|medical|study|learning|shopping|groceries|family|fitness|travel)\b",
+    re.I,
+)
 LIST_INTENT = re.compile(
     r"\b(list|show|display|what(?:'s| is| are)|which)\b.*\b(task|tasks|todo|to do)\b",
     re.I,
@@ -30,6 +38,36 @@ LEADING_TASK_FILLER = re.compile(
 )
 TRAILING_TASK_FILLER = re.compile(r"\b(please|thanks|thank you)\b\s*$", re.I)
 MERIDIEM_ONLY = re.compile(r"\b(a\.?m\.?|p\.?m\.?)\b\.?", re.I)
+WEEKDAY_INDEX = {
+    "monday": 0,
+    "tuesday": 1,
+    "wednesday": 2,
+    "thursday": 3,
+    "friday": 4,
+    "saturday": 5,
+    "sunday": 6,
+}
+CATEGORY_ALIAS = {
+    "financial": "finance",
+    "office": "work",
+    "medical": "health",
+    "learning": "study",
+    "groceries": "shopping",
+}
+AUTO_CATEGORY_KEYWORDS = {
+    "finance": [
+        "bill",
+        "electricity bill",
+        "current bill",
+        "emi",
+        "loan",
+        "credit card",
+        "rent",
+        "insurance premium",
+        "subscription renewal",
+        "payment",
+    ],
+}
 
 
 def _parse_time(match) -> Optional[str]:
@@ -58,6 +96,29 @@ def _date_for_next_week() -> Optional[str]:
         if today.weekday() == 0:  # next Monday
             return today.strftime("%Y-%m-%d")
     return None
+
+
+def _date_for_next_weekday(name: str) -> Optional[str]:
+    target = WEEKDAY_INDEX.get((name or "").lower())
+    if target is None:
+        return None
+    today = datetime.now().astimezone().date()
+    delta = (target - today.weekday()) % 7
+    if delta == 0:
+        delta = 7
+    return (today + timedelta(days=delta)).strftime("%Y-%m-%d")
+
+
+def _extract_category(text: str) -> Optional[str]:
+    source = (text or "").lower()
+    m = CATEGORY_HINT.search(source)
+    if not m:
+        for category, keywords in AUTO_CATEGORY_KEYWORDS.items():
+            if any(keyword in source for keyword in keywords):
+                return category
+        return None
+    raw = m.group(1).lower().strip()
+    return CATEGORY_ALIAS.get(raw, raw)
 
 
 def _clean_task_title(raw: str) -> str:
@@ -93,8 +154,15 @@ def parse_task_from_text(text: str) -> Optional[Task]:
         due_date = _date_for_tomorrow()
     elif TODAY.search(text):
         due_date = _date_for_today()
+    elif NEXT_WEEKDAY.search(text):
+        weekday_match = NEXT_WEEKDAY.search(text)
+        due_date = _date_for_next_weekday(weekday_match.group(1)) if weekday_match else None
     elif NEXT_WEEK.search(text):
         due_date = _date_for_next_week()
+    else:
+        weekday_match = ON_WEEKDAY.search(text)
+        if weekday_match:
+            due_date = _date_for_next_weekday(weekday_match.group(1))
 
     time_match = TIME.search(text)
     if time_match:
@@ -118,12 +186,32 @@ def parse_task_from_text(text: str) -> Optional[Task]:
 
     if URGENT.search(text):
         priority = Priority.URGENT
+    elif HIGH_PRIO.search(text):
+        priority = Priority.HIGH
+    elif MEDIUM_PRIO.search(text):
+        priority = Priority.MEDIUM
     elif LOW_PRIO.search(text):
         priority = Priority.LOW
 
+    category = _extract_category(text)
+
     # Clean title: remove date/time phrases for display
     title = raw
-    for pat in [TOMORROW, TODAY, NEXT_WEEK, TIME, IN_N_HOURS, IN_N_DAYS, URGENT, LOW_PRIO]:
+    for pat in [
+        TOMORROW,
+        TODAY,
+        NEXT_WEEKDAY,
+        ON_WEEKDAY,
+        NEXT_WEEK,
+        TIME,
+        IN_N_HOURS,
+        IN_N_DAYS,
+        URGENT,
+        HIGH_PRIO,
+        MEDIUM_PRIO,
+        LOW_PRIO,
+        CATEGORY_HINT,
+    ]:
         title = pat.sub("", title)
     title = MERIDIEM_ONLY.sub("", title)
     title = re.sub(r"\s*[,;:.!?-]+\s*$", "", title)
@@ -140,6 +228,7 @@ def parse_task_from_text(text: str) -> Optional[Task]:
     return Task(
         id=None,
         title=title,
+        category=(category or "general"),
         due_date=due_date,
         due_time=due_time,
         priority=priority,
