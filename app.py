@@ -2740,6 +2740,7 @@ def _parse_iso_to_local_date(value: str):
 
 # Smart reminders: upcoming tasks in next 2 hours
 def _tasks_due_soon(tasks: list, within_hours: float = 2):
+    """Tasks that are due in the next within_hours (default 2 hours)."""
     now = _now_local()
     end = now + timedelta(hours=within_hours)
     out = []
@@ -2764,6 +2765,7 @@ def _tasks_due_soon(tasks: list, within_hours: float = 2):
 
 
 def _tasks_due_now(tasks: list, grace_minutes: int = 2):
+    """Tasks that are due within the last grace_minutes (overdue or just became due)."""
     now = _now_local()
     window_start = now - timedelta(minutes=grace_minutes)
     out = []
